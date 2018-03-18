@@ -73,7 +73,6 @@ impl Unit {
     /// Union with the other unit.
     pub fn union(&mut self, other: &Unit) {
         self.observers = self.observers.union(&other.observers).cloned().collect();
-        self.children = self.children.union(&other.children).cloned().collect();
     }
 
     /// Add a new child.
@@ -94,10 +93,10 @@ impl Unit {
             graphviz += &format!("{:02x}", observer.0[0]);
             num_of_observers -= 1;
             if num_of_observers != 0 {
-                graphviz += &format!(", ");
+                graphviz += ", ";
             }
         }
-        graphviz += &format!(")\"");
+        graphviz += ")\"";
         graphviz
     }
 }
@@ -107,7 +106,7 @@ impl Debug for Unit {
         write!(
             formatter,
             "Unit identifier: {:02x}{:02x}{:02x}.. , parent: {:02x}{:02x}{:02x}.. , \
-             payload: {:?} , observers: {:?}",
+             payload: {:?} , observers: {:?}, children: {:?}",
             self.identifier[0],
             self.identifier[1],
             self.identifier[2],
@@ -115,7 +114,8 @@ impl Debug for Unit {
             self.parent[1],
             self.parent[2],
             self.payload,
-            self.observers
+            self.observers,
+            self.children
         )
     }
 }

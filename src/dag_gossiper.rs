@@ -162,7 +162,7 @@ mod tests {
         // TODO: need to decide a termination condition. So far, it's using a fixed rounds.
         //       The number of rounds shall be adjusted in relation to the network size.
         //       The result from safe_gossip can be a reference.
-        for _ in 0..10 {
+        for _ in 0..30 {
             let mut messages = BTreeMap::new();
             // Call `next_round()` on each node to gather a list of serialised DAG.
             for (i, gossiper) in gossipers.iter_mut().enumerate() {
@@ -192,8 +192,8 @@ mod tests {
     // all of the gossipers, however each one with its own sequence.
     fn dag_gossip() {
         let mut rng = SeededRng::new();
-        let num_of_nodes: Vec<u32> = vec![5];
-        let num_of_msgs: Vec<u32> = vec![2];
+        let num_of_nodes: Vec<u32> = vec![9];
+        let num_of_msgs: Vec<u32> = vec![5];
         for nodes in &num_of_nodes {
             for msgs in &num_of_msgs {
                 print!("Network of {} nodes, gossiping {} messages:\n", nodes, msgs);

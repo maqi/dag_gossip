@@ -56,10 +56,48 @@ impl Dag {
     ///     * If already know a unit, union the units.
     pub fn union(&mut self, other: &Dag) {
         for (identifier, other_unit) in &other.units {
-            self.units
-                .entry(identifier.to_vec())
-                .or_insert_with(|| other_unit.clone())
-                .union(other_unit);
+            if let Some(unit) = self.units.get_mut(identifier) {
+                // If already see the unit, union these two.
+                unit.union(other_unit);
+                continue;
+            }
+            // If already observed the payload along the path the other uint sits, only union
+            // the observers.
+            if let Some(identifier) = self.has_observed_in(
+                other_unit.parent.clone(),
+                &other_unit.payload,
+            )
+            {
+                if let Some(unit) = self.units.get_mut(&identifier) {
+                    unit.observers = unit.observers
+                        .union(&other_unit.observers)
+                        .cloned()
+                        .collect();
+                }
+            } else {
+                let _ = self.units.insert(
+                    other_unit.identifier.clone(),
+                    other_unit.clone(),
+                );
+            }
+        }
+        // Only merge a child in when it was not a child to us yet.
+        let mut our_known_children = BTreeSet::new();
+        for unit in self.units.values() {
+            our_known_children = our_known_children.union(&unit.children).cloned().collect();
+        }
+        let mut children_to_union = BTreeMap::new();
+        for (k, v) in &other.units {
+            let non_exist_children = v.children
+                .intersection(&our_known_children)
+                .cloned()
+                .collect();
+            let _ = children_to_union.insert(k.clone(), non_exist_children);
+        }
+        for (identifier, children) in children_to_union {
+            if let Some(unit) = self.units.get_mut(&identifier) {
+                unit.children = unit.children.union(&children).cloned().collect();
+            }
         }
     }
 
@@ -73,15 +111,15 @@ impl Dag {
         let _ = observers.insert(*own_id);
         let parent = self.get_best_parent(own_id);
 
-        // In case the parent is regarding the same event but be seen by other first
+        // In case the parent is regarding the same event but be seen by others first
         // we shall only add us as an observer to it
-        if parent.payload == payload {
-            if let Some(parent) = self.units.get_mut(&parent.identifier) {
-                parent.add_observer(own_id);
+        if let Some(observed) = self.has_observed_in(parent.identifier.clone(), &payload) {
+            if let Some(unit) = self.units.get_mut(&observed) {
+                unit.add_observer(own_id);
+                return;
             } else {
                 panic!("just find a best parent but cann't fetch it from graph");
             }
-            return;
         }
 
         let unit = Unit::new(parent.clone(), payload, observers);
@@ -95,6 +133,30 @@ impl Dag {
             .entry(unit.identifier.clone())
             .or_insert_with(|| unit.clone())
             .union(&unit);
+    }
+
+    // Travel along the path started from the input tip, to find out whether the payload has been
+    // observed before. If so, return the identifier of the unit holds such payload.
+    fn has_observed_in(&self, tip: Vec<u8>, payload: &[u8]) -> Option<Vec<u8>> {
+        let mut iterator = tip;
+        let mut steps = 0;
+        while let Some(unit) = self.units.get(&iterator) {
+            if unit.payload == payload.to_vec() {
+                return Some(unit.identifier.clone());
+            }
+            if unit.identifier == self.genesis.identifier {
+                break;
+            }
+            steps += 1;
+            if steps > self.units.len() {
+                for unit in self.units.values() {
+                    println!("{:?}", unit);
+                }
+                panic!("breaking as experiencing a cycle in {:?}", self);
+            }
+            iterator = unit.parent.clone();
+        }
+        None
     }
 
     // The parent shall be a clildless unit, and:
@@ -133,35 +195,37 @@ impl Dag {
         // Travel along the path from the childless unit to the gensis to collect the scores
         // The score is so far defined as :
         //      (the length of the path, number of stable unit alongs the path)
-        let mut path_counters: Vec<(u8, u8)> = Vec::new();
+        let mut path_counters = BTreeMap::new();
         for child in &childless {
             let mut stats = (0, 0);
             let mut iterator = &child.parent;
             while let Some(parent) = self.units.get(iterator) {
                 stats.0 += 1;
-                // Reached the genesis.
-                if parent.identifier == self.genesis.identifier {
-                    break;
-                }
                 // The unit is stable
                 if parent.observers.len() as u8 >= self.majority {
                     stats.1 += 1;
                 }
+                // Reached the genesis.
+                if parent.identifier == self.genesis.identifier {
+                    break;
+                }
                 iterator = &parent.parent;
             }
-            path_counters.push(stats);
+            let _ = path_counters.insert(child.identifier.clone(), stats);
         }
 
         // Pick the childless units who have the most stable units along it.
         let mut max = 0;
         let mut max_childless: Vec<(u8, Unit)> = Vec::new();
-        for i in 0..path_counters.len() {
-            if path_counters[i].1 == max {
-                max_childless.push((path_counters[i].0, childless[i].clone()));
-            } else if path_counters[i].1 > max {
-                max = path_counters[i].1;
-                max_childless.clear();
-                max_childless.push((path_counters[i].0, childless[i].clone()));
+        for child in &childless {
+            if let Some(counters) = path_counters.get(&child.identifier) {
+                if counters.1 == max {
+                    max_childless.push((counters.0, child.clone()));
+                } else if counters.1 > max {
+                    max = counters.1;
+                    max_childless.clear();
+                    max_childless.push((counters.0, child.clone()));
+                }
             }
         }
         if max_childless.len() == 1 {
@@ -187,12 +251,13 @@ impl Dag {
         for entry in &max_childless {
             if entry.1.observers.len() == max_votes {
                 max_votes_childless.push(entry.1.clone());
-            } else if entry.1.observers.len() as u8 > max {
+            } else if entry.1.observers.len() > max_votes {
                 max_votes = entry.1.observers.len();
                 max_votes_childless.clear();
                 max_votes_childless.push(entry.1.clone());
             }
         }
+
         if let Some(best_parent) = max_votes_childless.pop() {
             best_parent.clone()
         } else {
