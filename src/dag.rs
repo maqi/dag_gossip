@@ -205,12 +205,43 @@ impl Debug for Dag {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         writeln!(
             formatter,
-            "DAG has majority of {} and contains graph of {{",
+            "DAG has majority of {} and contains graph of :",
             self.majority
         )?;
+        writeln!(formatter, "```graphviz")?;
+        writeln!(formatter, "digraph hierarchy {{")?;
+        writeln!(formatter, "    nodesep=1.0")?;
+        let mut units_state = BTreeMap::new();
         for unit in self.units.values() {
-            writeln!(formatter, "    {:?}", unit)?;
+            let graph_node_name = unit.graphviz();
+            if unit.observers.len() as u8 >= self.majority {
+                writeln!(formatter, "    node [color=Black,fontname=Courier]")?;
+                let _ = units_state.insert(unit.identifier.clone(), (
+                    "stable",
+                    graph_node_name.clone(),
+                    unit.parent.clone(),
+                ));
+            } else {
+                writeln!(formatter, "    node [color=Red,fontname=Courier]")?;
+                let _ = units_state.insert(unit.identifier.clone(), (
+                    "unstable",
+                    graph_node_name.clone(),
+                    unit.parent.clone(),
+                ));
+            }
+            writeln!(formatter, "    {}", graph_node_name)?;
         }
-        writeln!(formatter, "}}")
+        for entry in units_state.values() {
+            if let Some(parent) = units_state.get(&entry.2) {
+                if entry.0 == "stable" {
+                    writeln!(formatter, "    edge [color=black, style=line]")?;
+                } else {
+                    writeln!(formatter, "    edge [color=Red, style=dashed]")?;
+                }
+                writeln!(formatter, "    {} -> {}", entry.1, parent.1)?;
+            }
+        }
+        writeln!(formatter, "}}")?;
+        writeln!(formatter, "```")
     }
 }

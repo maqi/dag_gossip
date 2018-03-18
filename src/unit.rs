@@ -85,6 +85,21 @@ impl Unit {
     pub fn add_observer(&mut self, id: &Id) {
         let _ = self.observers.insert(*id);
     }
+
+    /// Print self in graphviz format.
+    pub fn graphviz(&self) -> String {
+        let mut graphviz: String = format!("\"{:02x}(", self.payload[self.payload.len() - 1]);
+        let mut num_of_observers = self.observers.len();
+        for observer in &self.observers {
+            graphviz += &format!("{:02x}", observer.0[0]);
+            num_of_observers -= 1;
+            if num_of_observers != 0 {
+                graphviz += &format!(", ");
+            }
+        }
+        graphviz += &format!(")\"");
+        graphviz
+    }
 }
 
 impl Debug for Unit {
